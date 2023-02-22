@@ -9,29 +9,50 @@
   substituteAll,
   ageBin ? "${rage}/bin/rage",
   shellcheck,
-}:
-stdenv.mkDerivation rec {
-  pname = "agenix";
-  version = "0.13.0";
-  src = substituteAll {
-    inherit ageBin version;
-    sedBin = "${gnused}/bin/sed";
-    nixInstantiate = "${nix}/bin/nix-instantiate";
-    mktempBin = "${mktemp}/bin/mktemp";
-    diffBin = "${diffutils}/bin/diff";
-    src = ./agenix.sh;
-  };
-  dontUnpack = true;
+}: let
+  bin = "${placeholder "out"}/bin/agenix";
+in
+  stdenv.mkDerivation rec {
+    pname = "agenix";
+    version = "0.13.0";
+    src = substituteAll {
+      inherit ageBin version;
+      sedBin = "${gnused}/bin/sed";
+      nixInstantiate = "${nix}/bin/nix-instantiate";
+      mktempBin = "${mktemp}/bin/mktemp";
+      diffBin = "${diffutils}/bin/diff";
+      src = ./agenix.sh;
+    };
+    dontUnpack = true;
 
-  doCheck = true;
-  checkInputs = [shellcheck];
-  postCheck = ''
-    shellcheck $src
-  '';
+    doInstallCheck = true;
+    installCheckInputs = [shellcheck];
+    postInstallCheck = ''
+      shellcheck ${bin}
+      ${bin} -h | grep ${version}
 
-  installPhase = ''
-    install -D $src ${placeholder "out"}/bin/agenix
-  '';
+      mkdir -p /tmp/home/.ssh
+      cp -r "${../example}" /tmp/home/secrets
+      chmod -R u+rw /tmp/home/secrets
+      export HOME=/tmp/home
+      (
+        umask u=rw,g=r,o=r
+        cp ${../example_keys/user1.pub} $HOME/.ssh/id_ed25519.pub
+        chown $UID $HOME/.ssh/id_ed25519.pub
+      )
+      (
+        umask u=rw,g=,o=
+        cp ${../example_keys/user1} $HOME/.ssh/id_ed25519
+        chown $UID $HOME/.ssh/id_ed25519
+      )
 
-  meta.description = "age-encrypted secrets for NixOS";
-}
+      cd /tmp/home/secrets
+      ${bin} -d secret1.age | grep "hello"
+    '';
+
+    installPhase = ''
+      install -D $src ${bin}
+    '';
+
+    meta.description = "age-encrypted secrets for NixOS";
+  }
